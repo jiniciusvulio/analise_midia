@@ -1,0 +1,230 @@
+---
+title: "Análise de Sentimento de Mídia Social sobre o Google no Reddit"
+author: "Vinícius da Cunha"
+date: "2023-09-28"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### A tarefa de negócios
+
+Em uma sociedade globalizada, na qual o acesso à informação é cada vez mais facilitado e impulsionado pelas mídias sociais<sup>[1]</sup>, as empresas precisam se adaptar às mudanças e tendências do contexto em que estão inseridas, dando origem, entre outros elementos, à importância da manutenção da imagem corporativa<sup>[2]</sup>. Buscando se manterem em alinhamento com os valores do seu público-alvo, surgem ferramentas tecnológicas que permitem a essas empresas monitorar o desempenho popular de suas marcas<sup>[3]</sup>. Uma dessas ferramentas é a análise de sentimentos nas mídias sociais, que será abordada neste estudo e é capaz de demonstrar a efetividade de um <em>branding</em> e a visão do público digital sobre uma determinada marca.
+
+### Sobre a empresa
+
+De acordo com as informações disponíveis no site da própria empresa, a Google é uma multinacional americana inserida no mercado de tecnologia. Detentora de uma diversa gama de produtos e serviços, a empresa foi fundada em 1998 pelos cientistas da computação Larry Page e Sergey Brin, enquanto estudantes na Universidade de Stanford, na Califórnia, EUA. Além de ser responsável por produtos digitais, como o mundialmente conhecido motor de busca, a Google é reconhecida também pela atuação em áreas como a proteção aos usuários e seus dados<sup>[4]</sup>, a inclusão tecnológica<sup>[5]</sup> e o estímulo à sustentabilidade<sup>[6]</sup>, tendo, assim, se estabelecido entre as maiores empresas do mundo e fixado a sua marca no conhecimento da população global.
+
+### O estudo
+
+Para os fins deste estudo, a empresa/marca selecionada foi a Google e a plataforma digital escolhida foi a rede social de comunidades (ou, como são chamadas na plataforma, "Subreddits") Reddit, por seus volumes globais de usuários e alta relevância no cenário de negócios. Para avaliar o desempenho digital da marca, foram recuperadas publicações feitas pela comunidade do Reddit no fórum de tecnologia da rede ("r/technology"), estas, processadas e transformadas em um conjunto de dados. Por sua vez, o conjunto passou pelos processos de limpeza, transformação e análise, com o objetivo de gerar insights valiosos sobre o desempenho da Google no âmbito popular. As ferramentas utilizadas foram a linguagem de programação R e alguns de seus pacotes voltados à análise/ciência de dados, assim como o ambiente de desenvolvimento integrado RStudio.
+
+### Análise
+
+
+
+
+#### Carregando os pacotes necessários
+
+```{r}
+library(RedditExtractoR)
+library(tidyverse)
+library(tidytext)
+library(jsonlite)
+library(ggplot2)
+library(wordcloud)
+library(RColorBrewer)
+```
+
+
+
+
+
+#### Encontrando os dados
+
+```{r}
+threads <- find_thread_urls( keywords= "google", subreddit = "technology", sort_by = "new", period = "year" )
+```
+
+```{r, warning=FALSE}
+# recuperando o conteúdo do tópico pela URL
+
+content <- get_thread_content( threads$url )
+```
+
+#### Preparando os dados para a limpeza 
+
+```{r}
+# gerando dataframe
+
+comments_data <- data.frame(
+  author = content$comments$author,
+  comment = content$comments$comment,
+  comment_id = content$comments$comment_id,
+  datestamp = content$comments$date
+)
+
+```
+
+```{r}
+# extraindo as palavras dos comentários
+
+comments_words <- comments_data %>%
+  select(
+    author,
+    comment,
+    comment_id,
+    datestamp
+  ) %>%
+  unnest_tokens( word, comment )
+
+```
+
+
+
+
+
+#### Limpando os dados a serem processados
+
+```{r}
+# verificando a lista de palavras comuns a serem descartadas do conjunto
+
+stop_words
+
+```
+
+```{r}
+
+# criando um conjunto adicional de palavras a serem descartadas 
+
+ext_stop_words <- tibble(
+  word = c(
+    "https",
+    "amp",
+    "r/",
+    "u/"
+  ),
+  lexicon = "reddit"
+)
+
+set_stop_words <- stop_words %>%
+  bind_rows( ext_stop_words )
+
+suppressWarnings({
+  no_numbers <- comments_words %>%
+    filter( is.na( as.numeric( word ) ) )
+})
+
+excl_words <- no_numbers %>%
+  anti_join( set_stop_words, by = "word" )
+
+tibble(
+  words = nrow( comments_words ) ,
+  clean_words = nrow( excl_words )
+)
+
+```
+
+
+
+
+
+#### Processando e analisando os dados
+
+```{r, warning=FALSE}
+# encontrando e organizando as palavras mais frequentes
+
+top_words <- excl_words %>%
+  group_by( word ) %>%
+  tally %>%
+  arrange( desc( n ) ) %>%
+  head( 10 )
+
+dict_words <- excl_words %>%
+  inner_join( get_sentiments( "nrc" ), by = "word" )
+
+measures <- dict_words %>%
+  group_by( sentiment ) %>%
+  tally %>%
+  arrange( desc( n ) )
+
+colnames( measures )[2] = "frequency"
+
+top_words
+
+measures
+```
+
+
+
+
+
+#### Visualizando os resultados
+
+##### Gráfico de frequência
+
+Utilizando os termos mais populares dentre os usuários do fórum e seguindo o dicionário NRC de sentimentos, com o objetivo de associar as palavras com 8 tipos de emoções básicas (raiva, antecipação, desgosto, medo, alegria, tristeza, surpresa e confiança) e 2 categorias diferentes de sentimentos (positivo e negativo), é possível perceber que, na comunidade "Technology", as duas emoções mais frequentemente expressadas em relação ao tema "Google" são confiança e entusiasmo, enquanto os sentimentos positivos são mais presentes que os negativos.
+
+
+
+
+
+```{r}
+# criando o gráfico
+
+ggplot( measures, aes(x= sentiment, y = frequency, fill = frequency ) ) +
+  geom_bar( stat = "identity" ) +
+  scale_fill_continuous(type = "viridis") +
+  theme_bw() + 
+  labs(
+    title = "Sentiment frequency towards Google on Reddit",
+  )
+```
+
+
+
+
+
+##### Nuvem de palavras
+
+Na imagem abaixo, é possível encontrar alguns termos populares utilizados pelos usuários, sortidos de forma aleatória, em uma "nuvem de palavras", um método moderno de visualização sobre os assuntos mais presentes dentro de um determinado conjunto.
+
+
+
+
+
+```{r, warning=FALSE}
+# criando e exibindo a nuvem de palavras resgatadas
+
+cloud <- dict_words %>%
+  group_by( comment_id ) %>%
+  tally %>%
+  ungroup() %>%
+  inner_join( excl_words, by = "comment_id" ) %>%
+  anti_join( top_words, by = "word" ) %>%
+  group_by( word ) %>%
+  count
+
+cloud %>%
+  with( wordcloud( word, n, max.words = 100, colors = rainbow( 50 ), random.order = TRUE, random.color = TRUE ) )
+```
+
+
+
+
+
+### Referências bibliográficas
+
+[1] "Temos mais dados do que nunca. Como usá-los a nosso favor?". Exame, São Paulo, 09/06/2021. Disponível em:<https://exame.com/carreira/dados-uso-favor/>. Acesso em: 25/09/2023.
+
+[2] DEARO, Guilherme. "83% dos brasileiros compram de marcas alinhadas com seus valores pessoais". Exame, São Paulo, 21/03/19. Disponível em: <https://exame.com/marketing/brasileiros-marcas-valores-pessoais/>. Acesso em: 25/09/2023.
+
+[3] Michaela Krechovská, Petra Taušl Procházková. "Sustainability and its Integration into Corporate Governance Focusing on Corporate Performance Management and Reporting", Procedia Engineering, Volume 69, 2014. Disponível em: <https://www.sciencedirect.com/science/article/pii/S187770581400349X>. Acesso em: 25/09/2023.
+
+[4] "Responsible AI practices". Disponível em: <https://ai.google/responsibility/responsible-ai-practices/>. Acesso em: 25/09/2023.
+
+[5] "We’re tackling systemic barriers by taking meaningful action and showing up where it counts". Disponível em: <https://about.google/belonging/racial-equity/>. Acesso em: 25/09/2023.
+
+[6] "Leading the transition to a more sustainable future through information and innovation". Disponível em: <https://sustainability.google/>. Acesso em: 25/09/2023.
